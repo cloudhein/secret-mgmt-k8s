@@ -2,6 +2,10 @@
 
 This repository demonstrates how to set up and use the External Secrets Operator (ESO) to sync secrets from AWS Secrets Manager to a Kubernetes cluster. The setup is tested on a local KIND (Kubernetes in Docker) cluster.
 
+# External Secret Operator Architecture
+
+![ESO Diagram](./images/external-secret-operator.png)
+
 ## Overview
 
 The External Secrets Operator allows you to integrate external secret management systems like AWS Secrets Manager, HashiCorp Vault, Azure Key Vault, and others with Kubernetes. This example shows how to:
