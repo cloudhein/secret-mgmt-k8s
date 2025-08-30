@@ -1,37 +1,50 @@
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: mongo-db
+  name: mongo-deployment
   labels:
     app: mongo
+  annotations:
+    reloader.stakater.com/auto: "true"  # Auto-restart when any secret/configmap changes
+    # OR use specific secret monitoring:
+    # secret.reloader.stakater.com/reload: "mongodb-secret"
 spec:
-  containers:
-  - name: mongo-container
-    image: mongo:latest
-    ports:
-    - containerPort: 27017
-    env:
-    - name: MONGO_INITDB_ROOT_USERNAME
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret # name of the k8s secret created by external-secrets
-          key: user # key in the k8s secret
-    - name: MONGO_INITDB_ROOT_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret
-          key: password
-    - name: MONGO_INITDB_DATABASE
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret
-          key: database
-    volumeMounts:
-    - name: mongo-data
-      mountPath: /bitnami/mongo
-  volumes:
-  - name: mongo-data
-    emptyDir: {}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo-container
+        image: mongo:latest
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret # name of the k8s secret created by external-secrets
+              key: user # key in the k8s secret
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: password
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: database
+        volumeMounts:
+        - name: mongo-data
+          mountPath: /bitnami/mongo
+      volumes:
+      - name: mongo-data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -53,23 +53,9 @@ clusterexternalsecrets.external-secrets.io              2025-08-30T10:31:30Z
 clustergenerators.generators.external-secrets.io        2025-08-30T10:31:30Z
 clusterpushsecrets.external-secrets.io                  2025-08-30T10:31:30Z
 clustersecretstores.external-secrets.io                 2025-08-30T10:31:30Z
-ecrauthorizationtokens.generators.external-secrets.io   2025-08-30T10:31:30Z
 externalsecrets.external-secrets.io                     2025-08-30T10:31:30Z
-fakes.generators.external-secrets.io                    2025-08-30T10:31:30Z
-gcraccesstokens.generators.external-secrets.io          2025-08-30T10:31:30Z
-generatorstates.generators.external-secrets.io          2025-08-30T10:31:30Z
-githubaccesstokens.generators.external-secrets.io       2025-08-30T10:31:30Z
-grafanas.generators.external-secrets.io                 2025-08-30T10:31:30Z
-mfas.generators.external-secrets.io                     2025-08-30T10:31:30Z
-passwords.generators.external-secrets.io                2025-08-30T10:31:30Z
-pushsecrets.external-secrets.io                         2025-08-30T10:31:30Z
-quayaccesstokens.generators.external-secrets.io         2025-08-30T10:31:30Z
 secretstores.external-secrets.io                        2025-08-30T10:31:30Z
-sshkeys.generators.external-secrets.io                  2025-08-30T10:31:30Z
-stssessiontokens.generators.external-secrets.io         2025-08-30T10:31:30Z
-uuids.generators.external-secrets.io                    2025-08-30T10:31:30Z
-vaultdynamicsecrets.generators.external-secrets.io      2025-08-30T10:31:30Z
-webhooks.generators.external-secrets.io                 2025-08-30T10:31:30Z
+# ... and more
 ```
 
 ## AWS Configuration
@@ -121,23 +107,22 @@ kubectl create secret generic aws-creds \
 Create a `secret-store.yaml` file to configure the AWS provider:
 
 ```yaml
-apiVersion: external-secrets.io/v1
+apiVersion: external-secrets.io/v1beta1
 kind: SecretStore
 metadata:
   name: secretstore-aws
 spec:
-  refreshInterval: 600 # refresh interval to sync secrets & use pull based method
   provider:
     aws:
       service: SecretsManager
-      region: ap-southeast-1 
+      region: us-west-2  # Change to your AWS region
       auth:
-        secretRef: # local k8s authentication to aws secrets manager ( use only for local dev & there is no IRSA )
-          accessKeyIDSecretRef:
-            name: aws-creds # reference to secret containing aws creds & must create this secret first
+        secretRef:
+          accessKeyID:
+            name: aws-creds
             key: access-key-id
-          secretAccessKeySecretRef:
-            name: aws-creds # reference to secret containing aws creds & must create this secret first
+          secretAccessKey:
+            name: aws-creds
             key: secret-access-key
 ```
 
@@ -164,31 +149,31 @@ secretstore-aws   8s    Valid    ReadWrite      True
 Create an `external-secret.yaml` file to define which secrets to sync:
 
 ```yaml
-apiVersion: external-secrets.io/v1
+apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
   name: aws-external-secret
 spec:
-  refreshInterval: 600s
+  refreshInterval: 600s  # Refresh every 10 minutes
   secretStoreRef:
     name: secretstore-aws
     kind: SecretStore
   target:
-    name: mongodb-secret # secret name to be created in k8s
+    name: mongodb-secret
     creationPolicy: Owner
   data:
-  - secretKey: user # key in the k8s secret
+  - secretKey: username
     remoteRef:
-      key: mongodb-credentials # secret name used in the external secret store
-      property: username # key name used in the external secret store
-  - secretKey: password # key in the k8s secret
+      key: mongodb-credentials  # Name of secret in AWS Secrets Manager
+      property: username
+  - secretKey: password
     remoteRef:
-      key: mongodb-credentials 
-      property: password # key name used in the external secret store
-  - secretKey: database # key in the k8s secret
+      key: mongodb-credentials
+      property: password
+  - secretKey: database
     remoteRef:
-      key: mongodb-credentials 
-      property: database # key name used in the external secret store
+      key: mongodb-credentials
+      property: database
 ```
 
 Apply the configuration:
@@ -217,39 +202,87 @@ Check that the Kubernetes secret was created:
 kubectl get secret mongodb-secret
 ```
 
-## Example Application
+## Automatic Secret Rotation with Reloader
 
-Create a `mongo.yaml` file to deploy MongoDB using the synced secret:
+### The Problem with Secret Rotation
+
+By default, Kubernetes Pods **do not automatically restart** when secrets are updated. Even though External Secrets Operator successfully syncs new credentials from AWS Secrets Manager to Kubernetes secrets, your applications will continue using the old credentials until the Pod is manually restarted.
+
+### Solution: Install Reloader
+
+Reloader is a Kubernetes controller that watches for changes in ConfigMaps and Secrets and automatically restarts associated Deployments, DaemonSets, and StatefulSets.
+
+#### Install Reloader using Helm
+
+```bash
+helm repo add stakater https://stakater.github.io/stakater-charts
+helm repo update
+helm install reloader stakater/reloader
+```
+
+Verify Reloader installation:
+
+```bash
+kubectl get pods | grep reloader
+```
+
+Expected output:
+```
+reloader-reloader-5c46c485f7-6z897   1/1     Running   0          3m29s
+```
+
+## Example Application with Automatic Secret Rotation
+
+Create a `mongo-deployment.yaml` file to deploy MongoDB using a Deployment (required for Reloader):
 
 ```yaml
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: mongo-db
+  name: mongo-deployment
   labels:
-    app: mongodb
+    app: mongo
+  annotations:
+    reloader.stakater.com/auto: "true"  # Auto-restart when any secret/configmap changes
+    # OR use specific secret monitoring (more efficient):
+    # secret.reloader.stakater.com/reload: "mongodb-secret"
 spec:
-  containers:
-  - name: mongodb
-    image: mongo:latest
-    ports:
-    - containerPort: 27017
-    env:
-    - name: MONGO_INITDB_ROOT_USERNAME
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret
-          key: user
-    - name: MONGO_INITDB_ROOT_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret
-          key: password
-    - name: MONGO_INITDB_DATABASE
-      valueFrom:
-        secretKeyRef:
-          name: mongodb-secret
-          key: database
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+    spec:
+      containers:
+      - name: mongo-container
+        image: mongo:latest
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: user
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: password
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: database
+        volumeMounts:
+        - name: mongo-data
+          mountPath: /bitnami/mongo
+      volumes:
+      - name: mongo-data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -257,7 +290,7 @@ metadata:
   name: mongo-database
 spec:
   selector:
-    app: mongodb
+    app: mongo
   ports:
   - port: 27017
     targetPort: 27017
@@ -267,7 +300,7 @@ spec:
 Deploy the application:
 
 ```bash
-kubectl apply -f mongo.yaml
+kubectl apply -f mongo-deployment.yaml
 ```
 
 Verify the deployment:
@@ -278,13 +311,81 @@ kubectl get all
 
 Expected output:
 ```
-NAME           READY   STATUS    RESTARTS   AGE
-pod/mongo-db   1/1     Running   0          12s
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/mongo-deployment-f5944ffd5-hzbj8     1/1     Running   0          8s
+pod/reloader-reloader-5c46c485f7-6z897   1/1     Running   0          3m29s
 
-NAME                     TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)     AGE
-service/kubernetes       ClusterIP   10.132.0.1      <none>        443/TCP     10d
-service/mongo-database   ClusterIP   10.132.13.184   <none>        27017/TCP   12s
+NAME                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)     AGE
+service/kubernetes       ClusterIP   10.132.0.1       <none>        443/TCP     10d
+service/mongo-database   ClusterIP   10.132.243.120   <none>        27017/TCP   8s
+
+NAME                                READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/mongo-deployment    1/1     1            1           8s
+deployment.apps/reloader-reloader   1/1     1            1           3m29s
+
+NAME                                           DESIRED   CURRENT   READY   AGE
+replicaset.apps/mongo-deployment-f5944ffd5     1         1         1       8s
+replicaset.apps/reloader-reloader-5c46c485f7   1         1         1       3m29s
 ```
+
+## How Automatic Secret Rotation Works
+
+The complete flow works as follows:
+
+1. **AWS Secrets Manager**: You rotate/update credentials in AWS Secrets Manager
+2. **External Secrets Operator**: Detects the change and updates the Kubernetes secret (within the refresh interval - 600s in this example)
+3. **Reloader**: Detects the secret change and automatically restarts the deployment
+4. **Application**: Starts with the new credentials from the updated secret
+
+### Reloader Configuration Options
+
+```yaml
+# Option 1: Auto-reload on ANY secret or configmap change
+annotations:
+  reloader.stakater.com/auto: "true"
+
+# Option 2: Monitor specific secret only (recommended for production)
+annotations:
+  secret.reloader.stakater.com/reload: "mongodb-secret"
+
+# Option 3: Monitor multiple secrets
+annotations:
+  secret.reloader.stakater.com/reload: "mongodb-secret,another-secret"
+
+# Option 4: Monitor configmaps
+annotations:
+  configmap.reloader.stakater.com/reload: "my-configmap"
+```
+
+### Testing Secret Rotation
+
+1. **Update secret in AWS Secrets Manager**:
+   - Go to AWS Console → Secrets Manager
+   - Find your `mongodb-credentials` secret
+   - Update any value (e.g., change password)
+
+2. **Monitor the automatic rotation**:
+   ```bash
+   # Watch for secret changes
+   kubectl get secret mongodb-secret -w
+   
+   # Watch for pod restarts
+   kubectl get pods -l app=mongo -w
+   
+   # Check Reloader logs
+   kubectl logs -f deployment/reloader-reloader
+   ```
+
+3. **Verify new credentials are loaded**:
+   ```bash
+   # Check the updated secret
+   kubectl get secret mongodb-secret -o jsonpath='{.data.password}' | base64 -d
+   
+   # Verify pod environment variables
+   kubectl exec deployment/mongo-deployment -- env | grep MONGO
+   ```
+
+The entire process is now fully automated - no manual intervention required for secret rotation!
 
 ## File Structure
 
@@ -293,7 +394,7 @@ service/mongo-database   ClusterIP   10.132.13.184   <none>        27017/TCP   1
 ├── README.md
 ├── secret-store.yaml
 ├── external-secret.yaml
-├── mongo.yaml
+├── mongo-deployment.yaml  # Updated to use Deployment with Reloader
 └── aws-policy.json
 ```
 
@@ -304,6 +405,8 @@ service/mongo-database   ClusterIP   10.132.13.184   <none>        27017/TCP   1
 1. **SecretStore not ready**: Check AWS credentials and IAM permissions
 2. **ExternalSecret sync failed**: Verify the secret exists in AWS Secrets Manager
 3. **Application can't access secret**: Ensure the secret name matches in both ExternalSecret and application manifests
+4. **Pods not restarting on secret change**: Ensure you're using Deployment (not Pod) with proper Reloader annotations
+5. **Reloader not working**: Check that Reloader is installed and the annotations are correct
 
 ### Debugging Commands
 
@@ -319,6 +422,15 @@ kubectl get secret mongodb-secret -o yaml
 
 # Check External Secrets Operator logs
 kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets
+
+# Check Reloader logs for restart events
+kubectl logs -f deployment/reloader-reloader
+
+# Watch secret changes in real-time
+kubectl get secret mongodb-secret -w
+
+# Watch pod restarts
+kubectl get pods -l app=mongo -w
 ```
 
 ## Security Considerations
@@ -332,6 +444,7 @@ kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets
 ## References
 
 - [External Secrets Operator Documentation](https://external-secrets.io/)
+- [Reloader Documentation](https://github.com/stakater/Reloader)
 - [AWS Secrets Manager Documentation](https://docs.aws.amazon.com/secretsmanager/)
 - [KIND Documentation](https://kind.sigs.k8s.io/)
 - [Helm Documentation](https://helm.sh/docs/)
