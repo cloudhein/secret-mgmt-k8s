@@ -49,9 +49,23 @@ clusterexternalsecrets.external-secrets.io              2025-08-30T10:31:30Z
 clustergenerators.generators.external-secrets.io        2025-08-30T10:31:30Z
 clusterpushsecrets.external-secrets.io                  2025-08-30T10:31:30Z
 clustersecretstores.external-secrets.io                 2025-08-30T10:31:30Z
+ecrauthorizationtokens.generators.external-secrets.io   2025-08-30T10:31:30Z
 externalsecrets.external-secrets.io                     2025-08-30T10:31:30Z
+fakes.generators.external-secrets.io                    2025-08-30T10:31:30Z
+gcraccesstokens.generators.external-secrets.io          2025-08-30T10:31:30Z
+generatorstates.generators.external-secrets.io          2025-08-30T10:31:30Z
+githubaccesstokens.generators.external-secrets.io       2025-08-30T10:31:30Z
+grafanas.generators.external-secrets.io                 2025-08-30T10:31:30Z
+mfas.generators.external-secrets.io                     2025-08-30T10:31:30Z
+passwords.generators.external-secrets.io                2025-08-30T10:31:30Z
+pushsecrets.external-secrets.io                         2025-08-30T10:31:30Z
+quayaccesstokens.generators.external-secrets.io         2025-08-30T10:31:30Z
 secretstores.external-secrets.io                        2025-08-30T10:31:30Z
-# ... and more
+sshkeys.generators.external-secrets.io                  2025-08-30T10:31:30Z
+stssessiontokens.generators.external-secrets.io         2025-08-30T10:31:30Z
+uuids.generators.external-secrets.io                    2025-08-30T10:31:30Z
+vaultdynamicsecrets.generators.external-secrets.io      2025-08-30T10:31:30Z
+webhooks.generators.external-secrets.io                 2025-08-30T10:31:30Z
 ```
 
 ## AWS Configuration
